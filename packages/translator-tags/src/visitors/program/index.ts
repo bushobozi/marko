@@ -28,7 +28,7 @@ const previousProgramPath: WeakMap<
   t.NodePath<t.Program> | undefined
 > = new WeakMap();
 
-type ParamsExports = {
+export type ParamsExports = {
   id: string;
   props: { [prop: string]: ParamsExports } | undefined;
 };

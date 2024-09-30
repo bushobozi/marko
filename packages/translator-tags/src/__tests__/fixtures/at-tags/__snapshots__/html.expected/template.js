@@ -7,7 +7,7 @@ const _renderer = /* @__PURE__ */_createRenderer((input, _tagVar) => {
     foo: {
       renderBody: _register( /* @__PURE__ */_createRenderer(() => {
         _write("Foo!");
-      }), "packages/translator-tags/src/__tests__/fixtures/at-tags/template.marko_2_renderer")
+      }), "packages/translator-tags/src/__tests__/fixtures/at-tags/template.marko_1_renderer")
     }
   });
   _writeScope(_scope0_id, {

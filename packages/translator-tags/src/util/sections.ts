@@ -55,7 +55,7 @@ export function startSection(
   const extra = (path.node.extra ??= {});
   let section = extra.section;
 
-  if (!section && (path.type === "Program" || path.get("body").length)) {
+  if (!section && (path.type === "Program" || path.node.body.length)) {
     const parentSection = path.parentPath
       ? getOrCreateSection(path.parentPath)
       : undefined;

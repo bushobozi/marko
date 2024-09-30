@@ -54,6 +54,10 @@ export default {
           );
           findAttributeTags(child).forEach(replaceAttrTagName);
         });
+
+        path.node.body.body = path.node.attributeTags.concat(
+          path.node.body.body,
+        );
       }
 
       if (isDynamicTag(path) || !(isMacroTag(path) || isNativeTag(path))) {

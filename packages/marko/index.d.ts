@@ -310,10 +310,11 @@ declare global {
       removeAllListeners(eventName?: PropertyKey): this;
     }
 
-    export type AttrTag<T> = T & Iterable<AttrTag<T>>;
-    export type RepeatableAttrTag<T> =
-      | AttrTag<T>
-      | [AttrTag<T>, AttrTag<T>, ...AttrTag<T>[]];
+    export type AttrTag<T> = T & {
+      [Symbol.iterator](): Iterator<T>;
+    };
+
+    export type RepeatableAttrTag<T> = AttrTag<T>;
 
     export interface NativeTag<
       Input extends Record<string, any>,

@@ -33,21 +33,6 @@ export default function attrsToObject(
 
   if (withRenderBody) {
     const { body, params } = node.body;
-    let hoistedControlFlows = node.extra!.hoistedControlFlows;
-
-    if (hoistedControlFlows) {
-      for (const child of tag.get("body").get("body")) {
-        tag.insertBefore(child.node);
-        child.remove();
-
-        if (child.isConditional() || child.isLoop()) {
-          if (!--hoistedControlFlows) {
-            break;
-          }
-        }
-      }
-    }
-
     if (body.length) {
       const renderBodySection = getSection(tag.get("body"));
       const renderBodyExpression = t.arrowFunctionExpression(

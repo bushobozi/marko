@@ -35,6 +35,7 @@ import {
   getSignalFn,
   writeHTMLResumeStatements,
 } from "../../util/signals";
+import { getAllTagReferenceNodes } from "../../util/tag-reference-nodes";
 import toFirstExpressionOrBlock from "../../util/to-first-expression-or-block";
 import translateVar from "../../util/translate-var";
 import * as walks from "../../util/walks";
@@ -67,19 +68,7 @@ export default {
       startSection(tagBody);
       trackVarReferences(tag, BindingType.derived);
       trackParamsReferences(tagBody, BindingType.param);
-
-      const referenceNodes: t.Node[] = [];
-      if (tag.node.arguments) {
-        for (const arg of tag.node.arguments) {
-          referenceNodes.push(arg);
-        }
-      }
-
-      for (const attr of tag.node.attributes) {
-        referenceNodes.push(attr.value);
-      }
-
-      mergeReferences(tag, referenceNodes);
+      mergeReferences(tag, getAllTagReferenceNodes(tag.node));
       addReferenceToExpression(tag, domBinding);
     },
   },

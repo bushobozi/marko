@@ -417,6 +417,7 @@ export function mergeReferences(
   nodes: (t.Node | undefined)[],
 ) {
   getMergedReferences().set(target, nodes);
+  return (target.node.extra ??= {});
 }
 
 /**
@@ -441,10 +442,25 @@ function compareIntersections(a: Intersection, b: Intersection) {
 }
 
 export function finalizeReferences() {
+  const droppedReferences = getDroppedReferences();
+  if (droppedReferences.size) {
+    for (const expr of droppedReferences) {
+      const { extra } = expr;
+      if (extra && extra.referencedBindings) {
+        forEach(extra.referencedBindings, ({ downstreamExpressions }) => {
+          downstreamExpressions.delete(extra);
+        });
+
+        extra.referencedBindings = undefined;
+      }
+    }
+    droppedReferences.clear();
+  }
+
   const mergedReferences = getMergedReferences();
   if (mergedReferences.size) {
     for (const [target, nodes] of mergedReferences) {
-      const targetExtra = (target.node.extra ??= {});
+      const targetExtra = target.node.extra!;
       let { referencedBindings, isEffect } = targetExtra;
       for (const node of nodes) {
         const extra = node?.extra;
@@ -476,7 +492,6 @@ export function finalizeReferences() {
   }
 
   const bindings = getBindings();
-
   for (const binding of bindings) {
     if (binding.type !== BindingType.dom && !binding.upstreamAlias) {
       if (pruneBinding(bindings, binding)) {
@@ -497,7 +512,6 @@ export function finalizeReferences() {
   }
 
   const intersections = new Set<Intersection>();
-
   for (const binding of bindings) {
     const { name, section } = binding;
     if (binding.type !== BindingType.dom) {
@@ -653,6 +667,18 @@ export function addReferenceToExpression(path: t.NodePath, binding: Binding) {
     binding,
   );
   binding.downstreamExpressions.add(exprExtra);
+}
+
+const [getDroppedReferences] = createProgramState(() => new Set<t.Node>());
+export function dropReferences(node: t.Node | t.Node[]) {
+  const droppedReferences = getDroppedReferences();
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      droppedReferences.add(item);
+    }
+  } else {
+    droppedReferences.add(node);
+  }
 }
 
 export function getCanonicalBinding(binding?: Binding) {

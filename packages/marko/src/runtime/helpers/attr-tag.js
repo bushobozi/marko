@@ -10,16 +10,22 @@ exports.r = function repeatedAttrTag(targetProperty, attrTagInput) {
     ownerInput[targetProperty] = [attrTagInput];
   }
 };
+
+// eslint-disable-next-line no-constant-condition
+var rest = "MARKO_DEBUG" ? Symbol("Attribute Tag") : Symbol();
+var empty = [];
 exports.a = function repeatableAttrTag(targetProperty, attrTagInput) {
   var prev = ownerInput[targetProperty];
-  if (prev) {
-    if (Array.isArray(prev)) {
-      prev.push(attrTagInput);
+  var prevRest = prev && prev[rest];
+  if (prevRest) {
+    if (prevRest === empty) {
+      prev[rest] = [attrTagInput];
     } else {
-      ownerInput[targetProperty] = [prev, attrTagInput];
+      prevRest.push(attrTagInput);
     }
   } else {
-    attrTagInput[Symbol.iterator] = selfIterator;
+    attrTagInput[Symbol.iterator] = attributeTagIterator;
+    attrTagInput[rest] = empty;
     ownerInput[targetProperty] = attrTagInput;
   }
 };
@@ -38,6 +44,7 @@ exports.i = function attrTagInput(render, input) {
   }
 };
 
-function* selfIterator() {
+function* attributeTagIterator() {
   yield this;
+  yield* this[rest];
 }

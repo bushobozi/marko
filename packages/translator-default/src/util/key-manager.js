@@ -38,7 +38,7 @@ class KeyManager {
   }
 
   resolveKey(path) {
-    if (isLoopTag(path)) {
+    if (isNonAttributeTagLoop(path)) {
       // Record the first child key if found under a loop.
       const firstChildTag = path
         .get("body.body")
@@ -80,7 +80,7 @@ class KeyManager {
 }
 
 function getParentKeyScope(path) {
-  const parentLoopTag = path.findParent(isLoopTag);
+  const parentLoopTag = path.findParent(isNonAttributeTagLoop);
   return parentLoopTag && getKeyScope(parentLoopTag);
 }
 
@@ -172,4 +172,8 @@ function getUserKey(path) {
   }
 
   return key;
+}
+
+function isNonAttributeTagLoop(tag) {
+  return isLoopTag(tag) && tag.node.attributeTags.length === 0;
 }

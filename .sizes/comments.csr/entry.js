@@ -2,82 +2,64 @@ import {
   r as s,
   c as n,
   a,
-  o,
-  b as t,
-  v as l,
-  q as i,
-  d as c,
-  e as u,
-  f as m,
-  i as d,
-  g as e,
-  h as r,
-  j as v,
-  k as $,
-  l as f,
-  m as b,
-  n as p,
-} from "./runtime-Zaeaakst.js";
-const h = e(2, (s) => {
-    const {
-      _: { 6: n, 8: a },
-    } = s;
-    H(s[0], { comments: n.comments, path: a });
-  }),
-  k = t(8, null, void 0, h),
-  K = t(6, null, void 0, h),
-  T = s(
+  o as t,
+  v as o,
+  b as i,
+  q as c,
+  d as m,
+  e as l,
+  f as u,
+  i as e,
+  g as d,
+  l as r,
+  h as $,
+  j as f,
+  k as b,
+  m as p,
+} from "./runtime-CUEnj_xF.js";
+const v = s(
     "QURHKITf",
-    n(
-      `${I}`,
-      `/${J}&`,
-      (s) => {
-        N(s[0]);
-      },
-      [K, k],
-    ),
+    n(`${q}`, `/${x}&`, (s) => {
+      D(s[0]), g(s[0], { comments: comment.comments, path: id });
+    }),
   ),
-  _ = e(2, (s) => {
+  h = d(2, (s) => {
     const {
       _: { 2: n },
       7: a,
     } = s;
-    U(s, `${n.path || "c"}-${a}`);
+    j(s, `${n.path || "c"}-${a}`);
   }),
-  j = v(4),
-  E = a("ZcKJNKFe", (s) =>
-    o(
+  k = f(4),
+  K = a("ZcKJNKFe", (s) =>
+    t(
       s[2],
       "click",
       ((s) => {
         const { 9: n } = s;
         return function () {
-          i(s, F, !n);
+          c(s, T, !n);
         };
       })(s),
     ),
   ),
-  F = l(9, (s, n) => {
-    c(s[0], "hidden", !n), u(s[3], n ? "[-]" : "[+]"), m(s, E);
+  T = o(9, (s, n) => {
+    m(s[0], "hidden", !n), l(s[3], n ? "[-]" : "[+]"), u(s, K);
   }),
-  U = l(8, (s, n) => c(s[0], "id", n), r(k, 4)),
-  Z = l(7, null, _),
-  g = l(
-    6,
-    (s, n) => {
-      u(s[1], n.text), j(s, n.comments ? T : null);
-    },
-    d([j, r(K, 4)]),
-  ),
-  q = l(
+  j = o(8, (s, n) => m(s[0], "id", n)),
+  E = o(7, null, h),
+  F = o(6, (s, n) => {
+    l(s[1], n.text), k(s, n.comments ? v : null);
+  }),
+  U = o(
     5,
     (s, n) => {
-      g(s, n[0]), Z(s, n[1]);
+      F(s, n[0]), E(s, n[1]);
     },
-    d([g, Z]),
+    E,
   ),
-  x = t(2, null, void 0, _),
-  D = f(
+  Z = i(2, null, void 0, h),
+  _ = r(
     0,
     s(
       "$F_EaYZk",
@@ -85,29 +67,29 @@ const h = e(2, (s) => {
         "<li><span> </span><button> </button><!></li>",
         " E l D l%",
         (s) => {
-          F(s, !0);
+          T(s, !0);
         },
-        [x],
+        [Z],
         void 0,
-        q,
+        U,
       ),
     ),
   ),
-  H = l(2, (s, n) => D(s, [n.comments]), d([D, $(x, 0)])),
-  I = "<ul></ul>",
-  J = " b",
-  N = function () {},
-  Q = l(2, (s, n) => H(s[0], n), p(0, H));
+  g = o(2, (s, n) => _(s, [n.comments]), e([_, $(Z, 0)])),
+  q = "<ul></ul>",
+  x = " b",
+  D = function () {},
+  H = o(2, (s, n) => g(s[0], { ...n }), p(0, g));
 b(
   n(
-    `${I}`,
-    `/${J}&`,
+    `${q}`,
+    `/${x}&`,
     (s) => {
-      N(s[0]);
+      D(s[0]);
     },
     void 0,
     void 0,
-    l(1, (s, n) => Q(s, n[0]), Q),
+    o(1, (s, n) => H(s, n[0]), H),
   ),
   "rUbTinTf",
 ).mount();

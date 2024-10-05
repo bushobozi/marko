@@ -7,6 +7,7 @@ import {
 import { type Config, types as t } from "@marko/compiler";
 import { WalkCode } from "@marko/runtime-tags/common/types";
 
+import { attrPropsToExpression } from "../../util/attr-props-to-expression";
 import { isOutputHTML } from "../../util/marko-config";
 import { analyzeAttributeTags } from "../../util/nested-attribute-tags";
 import {
@@ -133,7 +134,7 @@ export default {
 
           if (properties.length) {
             hasMultipleArgs = true;
-            args.push(t.objectExpression(properties));
+            args.push(attrPropsToExpression(properties));
           } else {
             hasMultipleArgs =
               node.arguments.length > 1 || t.isSpreadElement(node.arguments[0]);
@@ -142,9 +143,9 @@ export default {
           const renderBodyProp = getTranslatedRenderBodyProperty(properties);
           if (renderBodyProp) {
             properties.splice(properties.indexOf(renderBodyProp), 1);
-            args.push(t.objectExpression(properties), renderBodyProp.value);
+            args.push(attrPropsToExpression(properties), renderBodyProp.value);
           } else {
-            args.push(t.objectExpression(properties));
+            args.push(attrPropsToExpression(properties));
           }
         }
 
@@ -260,7 +261,7 @@ export default {
 
           if (properties.length) {
             hasMultipleArgs = true;
-            args.push(t.objectExpression(properties));
+            args.push(attrPropsToExpression(properties));
           } else {
             hasMultipleArgs =
               node.arguments.length > 1 || t.isSpreadElement(node.arguments[0]);
@@ -271,7 +272,7 @@ export default {
             properties.splice(properties.indexOf(renderBodyProp), 1);
           }
 
-          args.push(t.objectExpression(properties));
+          args.push(attrPropsToExpression(properties));
         }
 
         if (args.length) {

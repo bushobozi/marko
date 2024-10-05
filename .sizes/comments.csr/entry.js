@@ -79,7 +79,7 @@ const v = s(
   q = "<ul></ul>",
   x = " b",
   D = function () {},
-  H = o(2, (s, n) => g(s[0], { ...n }), p(0, g));
+  H = o(2, (s, n) => g(s[0], n), p(0, g));
 b(
   n(
     `${q}`,

@@ -3,6 +3,7 @@ import { types as t } from "@marko/compiler";
 
 import { buildForRuntimeCall, getForType } from "../core/for";
 import { scopeIdentifier, type TemplateExports } from "../visitors/program";
+import { attrPropsToExpression } from "./attr-props-to-expression";
 import { getKnownAttrValues } from "./get-known-attr-values";
 import { getTagName } from "./get-tag-name";
 import { isOutputHTML } from "./marko-config";
@@ -75,7 +76,7 @@ export function translateAttrs(
                 prevProp.value = callRuntime(
                   "attrTags",
                   prevProp.value as t.Expression,
-                  t.objectExpression(translatedAttrTag.properties),
+                  attrPropsToExpression(translatedAttrTag.properties),
                 );
               } else {
                 properties.push(
@@ -83,7 +84,7 @@ export function translateAttrs(
                     toPropertyName(attrTagMeta.name),
                     callRuntime(
                       "attrTag",
-                      t.objectExpression(translatedAttrTag.properties),
+                      attrPropsToExpression(translatedAttrTag.properties),
                     ),
                   ),
                 );
@@ -94,7 +95,7 @@ export function translateAttrs(
                   toPropertyName(attrTagMeta.name),
                   callRuntime(
                     "attrTag",
-                    t.objectExpression(translatedAttrTag.properties),
+                    attrPropsToExpression(translatedAttrTag.properties),
                   ),
                 ),
               );
@@ -181,7 +182,7 @@ export function addDynamicAttrTagStatements(
                 callRuntime(
                   "attrTags",
                   getAttrTagIdentifier(attrTagMeta),
-                  t.objectExpression(translatedAttrTag.properties),
+                  attrPropsToExpression(translatedAttrTag.properties),
                 ),
               ),
             ),
@@ -194,7 +195,7 @@ export function addDynamicAttrTagStatements(
                 getAttrTagIdentifier(attrTagMeta),
                 callRuntime(
                   "attrTag",
-                  t.objectExpression(translatedAttrTag.properties),
+                  attrPropsToExpression(translatedAttrTag.properties),
                 ),
               ),
             ),

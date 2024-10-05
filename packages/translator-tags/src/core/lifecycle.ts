@@ -7,6 +7,7 @@ import {
 import { types as t } from "@marko/compiler";
 
 import { assertNoBodyContent } from "../util/assert";
+import { attrPropsToExpression } from "../util/attr-props-to-expression";
 import { isOutputDOM } from "../util/marko-config";
 import {
   type Binding,
@@ -93,7 +94,7 @@ export default {
               "lifecycle",
               scopeIdentifier,
               getScopeAccessorLiteral(lifecycleAttrsRef),
-              t.objectExpression(translatedAttrs.properties),
+              attrPropsToExpression(translatedAttrs.properties),
             ),
           ),
         );

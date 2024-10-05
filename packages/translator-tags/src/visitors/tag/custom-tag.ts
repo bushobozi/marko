@@ -9,6 +9,7 @@ import {
 } from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
 
+import { attrPropsToExpression } from "../../util/attr-props-to-expression";
 import { getTagName } from "../../util/get-tag-name";
 import {
   analyzeAttributeTags,
@@ -148,10 +149,15 @@ export default {
           peekScopeId,
         );
 
-        const inputExports =
-          loadFileForTag(tag)?.ast.program.extra?.domExports?.params?.props?.[0]
-            ?.props;
-        const { properties, statements } = translateAttrs(tag, inputExports);
+        const inputExport =
+          loadFileForTag(tag)?.ast.program.extra?.domExports?.params
+            ?.props?.[0];
+        const { properties, statements } = inputExport
+          ? translateAttrs(tag, inputExport.props)
+          : {
+              properties: [],
+              statements: [],
+            };
 
         if (node.extra!.tagNameNullable) {
           const renderBodyProp = getTranslatedRenderBodyProperty(properties);
@@ -175,7 +181,7 @@ export default {
 
           let renderTagExpr: t.Expression = callExpression(
             tagIdentifier,
-            t.objectExpression(properties),
+            attrPropsToExpression(properties),
           );
           if (tagVar) {
             translateVar(
@@ -198,7 +204,7 @@ export default {
             tag,
             callExpression(
               tagIdentifier,
-              t.objectExpression(properties),
+              attrPropsToExpression(properties),
               callRuntime(
                 "register",
                 callRuntime(
@@ -218,7 +224,7 @@ export default {
           setForceResumeScope(section);
         } else {
           statements.push(
-            callStatement(tagIdentifier, t.objectExpression(properties)),
+            callStatement(tagIdentifier, attrPropsToExpression(properties)),
           );
         }
 
@@ -466,7 +472,7 @@ function writeAttrsToExports(
       tag.hub.file,
       info.relativePath,
       templateExport.id,
-      `${importAlias}_input`,
+      importAlias,
     );
     addValue(
       info.tagSection,
@@ -493,7 +499,7 @@ function writeAttrsToExports(
       tag.hub.file,
       info.relativePath,
       templateExport.id,
-      `${importAlias}_input`,
+      importAlias,
     );
 
     const translatedAttrs = translateAttrs(tag);
@@ -511,7 +517,7 @@ function writeAttrsToExports(
       info.tagSection,
       referencedBindings,
       identifierToSignal(tagInputIdentifier),
-      t.objectExpression(translatedAttrs.properties),
+      attrPropsToExpression(translatedAttrs.properties),
       createScopeReadExpression(info.tagSection, info.childScopeBinding),
       callRuntime(
         "inChild",
@@ -707,10 +713,7 @@ function writeAttrsToExports(
         t.memberExpression(spreadId, toPropertyName(name));
       addStatement("render", info.tagSection, referencedBindings, [
         t.variableDeclaration("const", [
-          t.variableDeclarator(
-            tag.scope.generateUidIdentifier(`${importAlias}_spread`),
-            t.objectExpression(spreadProps),
-          ),
+          t.variableDeclarator(spreadId, attrPropsToExpression(spreadProps)),
         ]),
       ]);
     }

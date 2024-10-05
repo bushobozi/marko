@@ -7,6 +7,7 @@ import {
 import { types as t } from "@marko/compiler";
 import { WalkCode } from "@marko/runtime-tags/common/types";
 
+import { attrPropsToExpression } from "../../util/attr-props-to-expression";
 import evaluate from "../../util/evaluate";
 import { getTagName } from "../../util/get-tag-name";
 import { isStatefulReferences } from "../../util/is-stateful";
@@ -518,10 +519,7 @@ function getUsedAttrs(tag: t.MarkoTag) {
       skipExpression = t.objectExpression(skipProps);
     }
 
-    spreadExpression =
-      spreadProps.length === 1 && t.isSpreadElement(spreadProps[0])
-        ? spreadProps[0].argument
-        : t.objectExpression(spreadProps);
+    spreadExpression = attrPropsToExpression(spreadProps);
   }
 
   return {

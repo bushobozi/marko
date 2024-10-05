@@ -1,4 +1,4 @@
-import type { Config, types as t } from "@marko/compiler";
+import type { Config } from "@marko/compiler";
 
 import coreTagLib from "./core";
 import { extractVisitors } from "./util/visitors";

@@ -53,8 +53,8 @@ export function assertNoAttributeTags(path) {
 export function assertNoArgs(path) {
   const args = path.node.arguments;
   if (args && args.length) {
-    const start = args[0].node.loc.start;
-    const end = args[args.length - 1].node.loc.end;
+    const start = args[0].loc.start;
+    const end = args[args.length - 1].loc.end;
     throw path.hub.buildError(
       { loc: { start, end } },
       "Tag does not support arguments.",

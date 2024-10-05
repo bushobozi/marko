@@ -1,6 +1,7 @@
 import { assertNoArgs, type Tag } from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
 
+import { attrPropsToExpression } from "../util/attr-props-to-expression";
 import { isOutputHTML } from "../util/marko-config";
 import {
   BindingType,
@@ -49,7 +50,7 @@ export default {
         writer.flushInto(tag);
         writeHTMLResumeStatements(tag.get("body"));
         tag.insertBefore(translatedAttrs.statements);
-        translateVar(tag, t.objectExpression(translatedAttrs.properties));
+        translateVar(tag, attrPropsToExpression(translatedAttrs.properties));
       } else {
         const section = getSection(tag);
         const referencedBindings = node.extra?.referencedBindings;
@@ -67,7 +68,7 @@ export default {
           section,
           referencedBindings,
           derivation,
-          t.objectExpression(translatedAttrs.properties),
+          attrPropsToExpression(translatedAttrs.properties),
         );
       }
 

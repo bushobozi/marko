@@ -23,6 +23,7 @@ import programHTML from "./html";
 export let currentProgramPath: t.NodePath<t.Program>;
 export let scopeIdentifier: t.Identifier;
 export let cleanIdentifier: t.Identifier;
+export let htmlRendererIdentifier: t.Identifier;
 
 const previousProgramPath: WeakMap<
   t.NodePath<t.Program>,
@@ -98,6 +99,9 @@ export default {
         : (null as any as t.Identifier);
       cleanIdentifier = isOutputDOM()
         ? program.scope.generateUidIdentifier("clean")
+        : (null as any as t.Identifier);
+      htmlRendererIdentifier = isOutputHTML()
+        ? program.scope.generateUidIdentifier("renderer")
         : (null as any as t.Identifier);
       if (getMarkoOpts().output === "hydrate") {
         const entryFile = program.hub.file;

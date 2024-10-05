@@ -8,6 +8,7 @@ import {
   resolveRelativePath,
 } from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
+import path from "path";
 
 import { attrPropsToExpression } from "../../util/attr-props-to-expression";
 import { getTagName } from "../../util/get-tag-name";
@@ -58,6 +59,7 @@ import * as walks from "../../util/walks";
 import * as writer from "../../util/writer";
 import {
   currentProgramPath,
+  htmlRendererIdentifier,
   scopeIdentifier,
   type TemplateExport,
 } from "../program";
@@ -120,14 +122,19 @@ export default {
         writeHTMLResumeStatements(tagBody);
 
         if (t.isStringLiteral(node.name)) {
-          tagIdentifier = t.memberExpression(
-            importDefault(
-              tag.hub.file,
-              getTagRelativePath(tag),
-              node.name.value,
-            ),
-            t.identifier("_"),
-          );
+          const relativePath = getTagRelativePath(tag);
+          if (isCircularRequest(tag.hub.file, relativePath)) {
+            tagIdentifier = htmlRendererIdentifier;
+          } else {
+            tagIdentifier = t.memberExpression(
+              importDefault(
+                tag.hub.file,
+                getTagRelativePath(tag),
+                node.name.value,
+              ),
+              t.identifier("_"),
+            );
+          }
         } else {
           tagIdentifier = t.memberExpression(node.name, t.identifier("_"));
         }
@@ -252,7 +259,7 @@ export default {
         const relativePath = getTagRelativePath(tag);
         const childProgramExtra = loadFileForTag(tag)!.ast.program.extra;
         const childExports = childProgramExtra.domExports!;
-        const tagIdentifier = importNamed(
+        const tagIdentifier = importOrSelfReferenceName(
           file,
           relativePath,
           childExports.setup,
@@ -468,7 +475,7 @@ function writeAttrsToExports(
   if (tag.node.arguments?.length) {
     // With arguments passed to a custom tag we supply the first arg and thats all.
     const [arg] = tag.node.arguments;
-    const tagInputIdentifier = importNamed(
+    const tagInputIdentifier = importOrSelfReferenceName(
       tag.hub.file,
       info.relativePath,
       templateExport.id,
@@ -495,7 +502,7 @@ function writeAttrsToExports(
 
   if (!templateExport.props) {
     const referencedBindings = tag.node.extra?.referencedBindings;
-    const tagInputIdentifier = importNamed(
+    const tagInputIdentifier = importOrSelfReferenceName(
       tag.hub.file,
       info.relativePath,
       templateExport.id,
@@ -603,7 +610,7 @@ function writeAttrsToExports(
         const attrTagMeta = attrTagLookup[name];
         const childAttrExports = templateExport.props[attrTagMeta.name];
         if (!childAttrExports) continue;
-        const attrExportIdentifier = importNamed(
+        const attrExportIdentifier = importOrSelfReferenceName(
           tag.hub.file,
           info.relativePath,
           childAttrExports.id,
@@ -676,7 +683,7 @@ function writeAttrsToExports(
         continue;
       }
 
-      const attrExportIdentifier = importNamed(
+      const attrExportIdentifier = importOrSelfReferenceName(
         tag.hub.file,
         info.relativePath,
         childAttrExports.id,
@@ -720,7 +727,7 @@ function writeAttrsToExports(
 
     for (const name of missing) {
       const childAttrExports = templateExport.props[name]!;
-      const attrExportIdentifier = importNamed(
+      const attrExportIdentifier = importOrSelfReferenceName(
         tag.hub.file,
         info.relativePath,
         childAttrExports.id,
@@ -740,6 +747,27 @@ function writeAttrsToExports(
       );
     }
   }
+}
+
+function importOrSelfReferenceName(
+  file: t.BabelFile,
+  request: string,
+  name: string,
+  nameHint?: string,
+): t.Identifier {
+  if (isCircularRequest(file, request)) {
+    return t.identifier(name);
+  }
+
+  return importNamed(file, request, name, nameHint);
+}
+
+function isCircularRequest(file: t.BabelFile, request: string) {
+  const { filename } = file.opts;
+  return (
+    request === filename ||
+    (request[0] === "." && path.resolve(filename, "..", request) === filename)
+  );
 }
 
 function callStatement(

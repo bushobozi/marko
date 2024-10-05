@@ -20,7 +20,7 @@ interface RenderBodyObject {
 export function dynamicTagInput(
   tag: unknown | string | Renderer | RenderBodyObject | Template,
   input: Record<string, unknown>,
-  renderBody?: () => void,
+  renderBody?: (...args: unknown[]) => void,
 ) {
   if (!tag && !renderBody) return undefined;
 

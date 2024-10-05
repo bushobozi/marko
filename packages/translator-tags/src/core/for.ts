@@ -3,11 +3,11 @@ import {
   assertNoArgs,
   assertNoVar,
   getTagDef,
+  type Tag,
 } from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
 import { AccessorChar, WalkCode } from "@marko/runtime-tags/common/types";
 
-import { defineTagTranslator } from "../util/define-tag-translator";
 import { getKnownAttrValues } from "../util/get-known-attr-values";
 import { isStatefulReferences } from "../util/is-stateful";
 import {
@@ -36,6 +36,7 @@ import {
   setSubscriberBuilder,
   writeHTMLResumeStatements,
 } from "../util/signals";
+import { translateTarget } from "../util/target-translate";
 import * as walks from "../util/walks";
 import * as writer from "../util/writer";
 import { currentProgramPath } from "../visitors/program";
@@ -56,7 +57,7 @@ declare module "@marko/compiler/dist/types" {
   }
 }
 
-export default defineTagTranslator({
+export default {
   parseOptions: { controlFlow: true },
   attributes: {
     of: {
@@ -179,7 +180,7 @@ export default defineTagTranslator({
 
     tagExtra[kHasSingleChild] = tag.node.body.body.length === 1;
   },
-  translate: {
+  translate: translateTarget({
     html: {
       enter(tag) {
         if (tag.node.attributeTags.length) return;
@@ -215,9 +216,9 @@ export default defineTagTranslator({
           : tag.node.extra![kForMarkerBinding]!;
         const forAttrs = getKnownAttrValues(node);
         const forType = getForType(node)!;
-        const params = [...node.body.params];
+        const params = node.body.params;
         const statements: t.Statement[] = [];
-        const bodyStatements: t.Statement[] = [...node.body.body];
+        const bodyStatements = node.body.body as t.Statement[];
         const hasStatefulClosures = checkStatefulClosures(bodySection, true);
 
         if (isStateful || hasStatefulClosures) {
@@ -243,11 +244,11 @@ export default defineTagTranslator({
             } as const
           )[forType];
           const defaultByParamIndex = forType === "of" ? 1 : 0;
-          const requiredParamsSize = forAttrs.by
-            ? defaultParamNames.length
+          const requiredParamsIndex = forAttrs.by
+            ? defaultParamNames.length - 1
             : defaultByParamIndex;
 
-          for (let i = 0; i < requiredParamsSize; i++) {
+          for (let i = 0; i <= requiredParamsIndex; i++) {
             const existingParam = params[i];
             if (!existingParam || !t.isIdentifier(existingParam)) {
               const id = (params[i] =
@@ -368,7 +369,9 @@ export default defineTagTranslator({
           buildForRuntimeCall(forType, forAttrs, params, bodyStatements),
         );
 
-        tag.replaceWithMultiple(statements);
+        for (const replacement of tag.replaceWithMultiple(statements)) {
+          replacement.skip();
+        }
       },
     },
     dom: {
@@ -457,8 +460,8 @@ export default defineTagTranslator({
         tag.remove();
       },
     },
-  },
-});
+  }),
+} satisfies Tag;
 
 export function buildForRuntimeCall(
   type: ForType,

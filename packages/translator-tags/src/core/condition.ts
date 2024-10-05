@@ -1,8 +1,12 @@
-import { assertNoArgs, assertNoParams, assertNoVar } from "@marko/babel-utils";
+import {
+  assertNoArgs,
+  assertNoParams,
+  assertNoVar,
+  type Tag,
+} from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
 import { AccessorChar, WalkCode } from "@marko/runtime-tags/common/types";
 
-import { defineTagTranslator } from "../util/define-tag-translator";
 import { getTagName } from "../util/get-tag-name";
 import { isConditionTag, isCoreTagName } from "../util/is-core-tag";
 import { isStatefulReferences } from "../util/is-stateful";
@@ -32,6 +36,7 @@ import {
   setSubscriberBuilder,
   writeHTMLResumeStatements,
 } from "../util/signals";
+import { translateTarget } from "../util/target-translate";
 import toFirstStatementOrBlock from "../util/to-first-statement-or-block";
 import * as walks from "../util/walks";
 import * as writer from "../util/writer";
@@ -49,7 +54,7 @@ declare module "@marko/compiler/dist/types" {
   }
 }
 
-export const IfTag = defineTagTranslator({
+export const IfTag = {
   parseOptions: { controlFlow: true },
   autocomplete: [
     {
@@ -99,7 +104,7 @@ export const IfTag = defineTagTranslator({
       mergeReferences(rootTag, mergeReferenceNodes);
     }
   },
-  translate: {
+  translate: translateTarget({
     dom: {
       enter(tag) {
         if (tag.node.attributeTags.length) return;
@@ -321,8 +326,8 @@ export const IfTag = defineTagTranslator({
         }
       },
     },
-  },
-});
+  }),
+} satisfies Tag;
 
 export const ElseIfTag = {
   ...IfTag,

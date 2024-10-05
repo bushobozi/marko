@@ -601,6 +601,7 @@ export function addStatement(
   }
 
   if (type === "effect") {
+    // TODO: look into if we can be more explicit with these references instead of passinging originalNodes.
     if (Array.isArray(originalNodes)) {
       for (const node of originalNodes) {
         if (isInlined || !t.isFunction(node)) {

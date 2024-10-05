@@ -28,7 +28,7 @@ export function forTo(
 ) {
   const start = from || 0;
   const delta = step || 1;
-  for (let steps = (to - start) / delta, i = start; i < steps; i++) {
+  for (let steps = (to - start) / delta, i = 0; i <= steps; i++) {
     cb(start + i * delta);
   }
 }

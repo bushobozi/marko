@@ -2,28 +2,25 @@ import { isAttributeTag } from "@marko/babel-utils";
 import { types as t } from "@marko/compiler";
 
 import { buildForRuntimeCall, getForType } from "../core/for";
-import type { ParamsExports } from "../visitors/program";
+import { scopeIdentifier, type TemplateExports } from "../visitors/program";
 import { getKnownAttrValues } from "./get-known-attr-values";
 import { getTagName } from "./get-tag-name";
+import { isOutputHTML } from "./marko-config";
 // TODO: should this move here.
 import {
   type AttrTagLookup,
   getAttrTagIdentifier,
 } from "./nested-attribute-tags";
 import { callRuntime } from "./runtime";
+import { getScopeIdIdentifier } from "./sections";
+import { getResumeRegisterId } from "./signals";
 import toPropertyName from "./to-property-name";
 
 const renderBodyProps = new WeakSet<t.Node>();
 
-type BuildRenderBody = (
-  body: t.NodePath<t.MarkoTagBody>,
-  childExport?: ParamsExports,
-) => t.Expression | undefined;
-
 export function translateAttrs(
   tag: t.NodePath<t.MarkoTag>,
-  buildRenderBody: BuildRenderBody,
-  usedExports?: ParamsExports["props"],
+  templateExports?: TemplateExports,
   statements: t.Statement[] = [],
 ) {
   const seen = new Set<string>();
@@ -33,7 +30,7 @@ export function translateAttrs(
   if (attrTagLookup) {
     for (const name in attrTagLookup) {
       const attrTagMeta = attrTagLookup[name];
-      if (usesExport(usedExports, attrTagMeta.name)) {
+      if (usesExport(templateExports, attrTagMeta.name)) {
         seen.add(attrTagMeta.name);
         if (attrTagMeta.dynamic) {
           statements.push(
@@ -63,14 +60,12 @@ export function translateAttrs(
               i,
               attrTagLookup,
               statements,
-              buildRenderBody,
-              usedExports,
+              templateExports,
             );
           } else {
             const translatedAttrTag = translateAttrs(
               child,
-              buildRenderBody,
-              usedExports?.[attrTagMeta.name]?.props,
+              templateExports?.[attrTagMeta.name]?.props,
               statements,
             );
 
@@ -111,20 +106,16 @@ export function translateAttrs(
             i,
             attrTagLookup,
             statements,
-            buildRenderBody,
-            usedExports,
+            templateExports,
           );
         }
       }
     }
   }
 
-  if (!seen.has("renderBody") && usesExport(usedExports, "renderBody")) {
+  if (!seen.has("renderBody") && usesExport(templateExports, "renderBody")) {
     seen.add("renderBody");
-    const renderBodyExpression = buildRenderBody(
-      tag.get("body"),
-      usedExports?.renderBody,
-    );
+    const renderBodyExpression = buildRenderBody(tag.get("body"));
     if (renderBodyExpression) {
       const renderBodyProp = t.objectProperty(
         t.identifier("renderBody"),
@@ -141,7 +132,7 @@ export function translateAttrs(
     const { value } = attr;
     if (t.isMarkoSpreadAttribute(attr)) {
       properties.push(t.spreadElement(value));
-    } else if (!seen.has(attr.name) && usesExport(usedExports, attr.name)) {
+    } else if (!seen.has(attr.name) && usesExport(templateExports, attr.name)) {
       seen.add(attr.name);
       properties.push(t.objectProperty(toPropertyName(attr.name), value));
     }
@@ -156,7 +147,7 @@ export function getTranslatedRenderBodyProperty(
 ) {
   for (const prop of props) {
     if (renderBodyProps.has(prop)) {
-      return prop as unknown as t.ObjectExpression & { value: t.Expression };
+      return prop as unknown as t.ObjectProperty & { value: t.Expression };
     }
   }
 }
@@ -166,18 +157,19 @@ export function addDynamicAttrTagStatements(
   index: number,
   attrTagLookup: AttrTagLookup,
   statements: t.Statement[],
-  buildRenderBody: BuildRenderBody,
-  usedExports: ParamsExports["props"],
+  templateExports: TemplateExports,
 ): number {
   const tag = attrTags[index];
   if (tag.isMarkoTag()) {
     if (isAttributeTag(tag)) {
       const attrTagMeta = attrTagLookup[getTagName(tag)];
-      if (usesExport(usedExports, attrTagMeta.name) && attrTagMeta.dynamic) {
+      if (
+        usesExport(templateExports, attrTagMeta.name) &&
+        attrTagMeta.dynamic
+      ) {
         const translatedAttrTag = translateAttrs(
           tag,
-          buildRenderBody,
-          usedExports?.[attrTagMeta.name]?.props,
+          templateExports?.[attrTagMeta.name]?.props,
           statements,
         );
         if (attrTagMeta.repeated) {
@@ -217,8 +209,7 @@ export function addDynamicAttrTagStatements(
             index,
             attrTagLookup,
             statements,
-            buildRenderBody,
-            usedExports,
+            templateExports,
           );
 
         case "for": {
@@ -227,8 +218,7 @@ export function addDynamicAttrTagStatements(
             index,
             attrTagLookup,
             statements,
-            buildRenderBody,
-            usedExports,
+            templateExports,
           );
         }
       }
@@ -243,8 +233,7 @@ function translateForAttrTag(
   index: number,
   attrTagLookup: AttrTagLookup,
   statements: t.Statement[],
-  buildRenderBody: BuildRenderBody,
-  usedExports: ParamsExports["props"],
+  templateExports: TemplateExports,
 ) {
   const forTag = attrTags[index] as t.NodePath<t.MarkoTag>;
   const bodyStatements: t.Statement[] = [];
@@ -252,8 +241,7 @@ function translateForAttrTag(
     forTag,
     attrTagLookup,
     bodyStatements,
-    buildRenderBody,
-    usedExports,
+    templateExports,
   );
   statements.push(
     buildForRuntimeCall(
@@ -272,8 +260,7 @@ function translateIfAttrTag(
   index: number,
   attrTagLookup: AttrTagLookup,
   statements: t.Statement[],
-  buildRenderBody: BuildRenderBody,
-  usedExports: ParamsExports["props"],
+  templateExports: TemplateExports,
 ) {
   const ifTag = attrTags[index] as t.NodePath<t.MarkoTag>;
   const consequentStatements: t.Statement[] = [];
@@ -287,8 +274,7 @@ function translateIfAttrTag(
     ifTag,
     attrTagLookup,
     consequentStatements,
-    buildRenderBody,
-    usedExports,
+    templateExports,
   );
 
   let nextIndex = index + 1;
@@ -304,8 +290,7 @@ function translateIfAttrTag(
             nextTag,
             attrTagLookup,
             alternateStatements,
-            buildRenderBody,
-            usedExports,
+            templateExports,
           );
 
           if (testValue) {
@@ -334,8 +319,7 @@ function addAllAttrTagsAsDynamic(
   tag: t.NodePath<t.MarkoTag>,
   attrTagLookup: AttrTagLookup,
   statements: t.Statement[],
-  buildRenderBody: BuildRenderBody,
-  usedExports: ParamsExports["props"],
+  templateExports: TemplateExports,
 ) {
   const attrTags = tag.get("attributeTags");
   for (let i = 0; i < attrTags.length; i++) {
@@ -344,14 +328,13 @@ function addAllAttrTagsAsDynamic(
       i,
       attrTagLookup,
       statements,
-      buildRenderBody,
-      usedExports,
+      templateExports,
     );
   }
 }
 
-function usesExport(props: ParamsExports["props"], name: string) {
-  return !props || !!props[name];
+function usesExport(templateExports: TemplateExports, name: string) {
+  return !templateExports || !!templateExports[name];
 }
 
 function findObjectProperty(
@@ -382,4 +365,30 @@ function getConditionTestValue({
   node: { attributes },
 }: t.NodePath<t.MarkoTag>) {
   return attributes.length === 1 ? attributes[0].value : undefined;
+}
+
+function buildRenderBody(body: t.NodePath<t.MarkoTagBody>) {
+  const bodySection = body.node.extra?.section;
+  if (bodySection) {
+    if (isOutputHTML()) {
+      return callRuntime(
+        "register",
+        callRuntime(
+          "createRenderer",
+          t.arrowFunctionExpression(
+            body.node.params,
+            t.blockStatement(body.node.body),
+          ),
+        ),
+        t.stringLiteral(getResumeRegisterId(bodySection, "renderer")),
+        bodySection.closures.size && getScopeIdIdentifier(bodySection.parent!),
+      );
+    } else {
+      return callRuntime(
+        "bindRenderer",
+        scopeIdentifier,
+        t.identifier(bodySection.name),
+      );
+    }
+  }
 }

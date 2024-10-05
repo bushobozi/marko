@@ -20,6 +20,7 @@ export {
   data,
   html,
   lifecycle,
+  partialAttrs,
   props,
   styleAttr,
 } from "./dom/dom";

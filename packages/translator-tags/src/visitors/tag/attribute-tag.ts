@@ -4,11 +4,12 @@ import { types as t } from "@marko/compiler";
 import { isOutputHTML } from "../../util/marko-config";
 import { startSection } from "../../util/sections";
 import { writeHTMLResumeStatements } from "../../util/signals";
+import type { TemplateVisitor } from "../../util/visitors";
 import * as writer from "../../util/writer";
 
 export default {
   analyze: {
-    enter(tag: t.NodePath<t.MarkoTag>) {
+    enter(tag) {
       assertNoVar(tag);
       assertNoArgs(tag);
       startSection(tag.get("body"));
@@ -21,16 +22,16 @@ export default {
   },
 
   translate: {
-    enter(tag: t.NodePath<t.MarkoTag>) {
+    enter(tag) {
       if (isOutputHTML()) {
         writer.flushBefore(tag);
       }
     },
-    exit(tag: t.NodePath<t.MarkoTag>) {
+    exit(tag) {
       if (isOutputHTML()) {
         writer.flushInto(tag);
         writeHTMLResumeStatements(tag.get("body"));
       }
     },
   },
-};
+} satisfies TemplateVisitor<t.MarkoTag>;

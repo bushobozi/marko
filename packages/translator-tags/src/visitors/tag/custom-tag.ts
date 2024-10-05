@@ -10,9 +10,8 @@ import {
 import { types as t } from "@marko/compiler";
 
 import { getTagName } from "../../util/get-tag-name";
-import { isOutputHTML } from "../../util/marko-config";
 import {
-  analyzeAttributeTags as getAttrTagLookup,
+  analyzeAttributeTags,
   type AttrTagLookup,
   getAttrTagIdentifier,
 } from "../../util/nested-attribute-tags";
@@ -45,6 +44,7 @@ import {
   writeHTMLResumeStatements,
 } from "../../util/signals";
 import { getAllTagReferenceNodes } from "../../util/tag-reference-nodes";
+import { translateTarget } from "../../util/target-translate";
 import toPropertyName from "../../util/to-property-name";
 import {
   addDynamicAttrTagStatements,
@@ -52,12 +52,13 @@ import {
   translateAttrs,
 } from "../../util/translate-attrs";
 import translateVar from "../../util/translate-var";
+import type { TemplateVisitor } from "../../util/visitors";
 import * as walks from "../../util/walks";
 import * as writer from "../../util/writer";
 import {
   currentProgramPath,
-  type ParamsExports,
   scopeIdentifier,
+  type TemplateExport,
 } from "../program";
 
 type AttrTagGroup = AttrTagLookup[string]["group"];
@@ -72,6 +73,9 @@ declare module "@marko/compiler/dist/types" {
 export default {
   analyze: {
     enter(tag: t.NodePath<t.MarkoTag>) {
+      assertAttributesOrSingleArg(tag);
+      analyzeAttributeTags(tag);
+
       const section = getOrCreateSection(tag);
       const tagBody = tag.get("body");
 
@@ -100,197 +104,210 @@ export default {
         false;
     },
   },
-  translate: {
-    enter(tag: t.NodePath<t.MarkoTag>) {
-      assertAttributesOrSingleArg(tag);
-      walks.visit(tag);
-      if (isOutputHTML()) {
+  translate: translateTarget({
+    html: {
+      enter(tag) {
+        walks.visit(tag);
         writer.flushBefore(tag);
-      }
-    },
-    exit(tag: t.NodePath<t.MarkoTag>) {
-      if (isOutputHTML()) {
-        translateHTML(tag);
-      } else {
-        translateDOM(tag);
-      }
-    },
-  },
-};
+      },
+      exit(tag) {
+        const tagBody = tag.get("body");
+        const { node } = tag;
+        let tagIdentifier: t.Expression;
 
-function translateHTML(tag: t.NodePath<t.MarkoTag>) {
-  const tagBody = tag.get("body");
-  const { node } = tag;
-  let tagIdentifier: t.Expression;
+        writer.flushInto(tag);
+        writeHTMLResumeStatements(tagBody);
 
-  writer.flushInto(tag);
-  writeHTMLResumeStatements(tagBody);
-
-  if (t.isStringLiteral(node.name)) {
-    tagIdentifier = t.memberExpression(
-      importDefault(tag.hub.file, getTagRelativePath(tag), node.name.value),
-      t.identifier("_"),
-    );
-  } else {
-    tagIdentifier = t.memberExpression(node.name, t.identifier("_"));
-  }
-
-  const tagVar = node.var;
-  const section = getSection(tag);
-  const childScopeBinding = node.extra![kChildScopeBinding]!;
-  const peekScopeId = tag.scope.generateUidIdentifier(childScopeBinding?.name);
-  tag.insertBefore(
-    t.variableDeclaration("const", [
-      t.variableDeclarator(peekScopeId, callRuntime("peekNextScope")),
-    ]),
-  );
-
-  getSerializedScopeProperties(section).set(
-    getScopeAccessorLiteral(childScopeBinding),
-    peekScopeId,
-  );
-
-  const { properties, statements } = translateAttrs(tag, buildHTMLRenderBody);
-
-  if (node.extra!.tagNameNullable) {
-    const renderBodyProp = getTranslatedRenderBodyProperty(properties);
-    let renderBodyId: t.Identifier | undefined = undefined;
-
-    if (renderBodyProp) {
-      const renderBodyExpression = renderBodyProp.value;
-      renderBodyProp.value = renderBodyId =
-        tag.scope.generateUidIdentifier("renderBody");
-      const [renderBodyPath] = tag.insertBefore(
-        t.variableDeclaration("const", [
-          t.variableDeclarator(
-            renderBodyId,
-            // TODO: only register if needed (child template analysis)
-            renderBodyExpression,
-          ),
-        ]),
-      );
-      renderBodyPath.skip();
-    }
-
-    let renderTagExpr: t.Expression = callExpression(
-      tagIdentifier,
-      t.objectExpression(properties),
-    );
-    if (tagVar) {
-      translateVar(tag, t.unaryExpression("void", t.numericLiteral(0)), "let");
-      renderTagExpr = t.assignmentExpression("=", tagVar, renderTagExpr);
-    }
-
-    statements.push(
-      t.ifStatement(
-        tagIdentifier,
-        t.expressionStatement(renderTagExpr),
-        renderBodyId && callStatement(renderBodyId),
-      ),
-    );
-  } else if (tagVar) {
-    translateVar(
-      tag,
-      callExpression(
-        tagIdentifier,
-        t.objectExpression(properties),
-        callRuntime(
-          "register",
-          callRuntime(
-            "createRenderer",
-            t.arrowFunctionExpression([], t.blockStatement([])),
-          ),
-          t.stringLiteral(
-            getResumeRegisterId(
-              section,
-              (node.var as t.Identifier).extra?.binding, // TODO: node.var is not always an identifier.
+        if (t.isStringLiteral(node.name)) {
+          tagIdentifier = t.memberExpression(
+            importDefault(
+              tag.hub.file,
+              getTagRelativePath(tag),
+              node.name.value,
             ),
-          ),
-          getScopeIdIdentifier(section),
-        ),
-      ),
-    );
-    setForceResumeScope(section);
-  } else {
-    statements.push(
-      callStatement(tagIdentifier, t.objectExpression(properties)),
-    );
-  }
+            t.identifier("_"),
+          );
+        } else {
+          tagIdentifier = t.memberExpression(node.name, t.identifier("_"));
+        }
 
-  for (const replacement of tag.replaceWithMultiple(statements)) {
-    replacement.skip();
-  }
-}
+        const tagVar = node.var;
+        const section = getSection(tag);
+        const childScopeBinding = node.extra![kChildScopeBinding]!;
+        const peekScopeId = tag.scope.generateUidIdentifier(
+          childScopeBinding?.name,
+        );
+        tag.insertBefore(
+          t.variableDeclaration("const", [
+            t.variableDeclarator(peekScopeId, callRuntime("peekNextScope")),
+          ]),
+        );
 
-function translateDOM(tag: t.NodePath<t.MarkoTag>) {
-  const tagSection = getSection(tag);
-  const { node } = tag;
-  const extra = node.extra!;
-  const childScopeBinding = extra[kChildScopeBinding]!;
-  const write = writer.writeTo(tag);
-  const { file } = tag.hub;
-  const tagName = t.isIdentifier(node.name)
-    ? node.name.name
-    : t.isStringLiteral(node.name)
-      ? node.name.value
-      : "tag";
-  const relativePath = getTagRelativePath(tag);
-  const childProgramExtra = loadFileForTag(tag)!.ast.program.extra;
-  const childExports = childProgramExtra.domExports!;
-  const tagIdentifier = importNamed(
-    file,
-    relativePath,
-    childExports.setup,
-    tagName,
-  );
-  const inputExport = childExports.params?.props?.[0];
-
-  if (inputExport) {
-    writeDOMAttrs(tag, inputExport, getTagName(tag) || "child", {
-      tagSection,
-      relativePath,
-      childScopeBinding,
-    });
-  }
-
-  write`${importNamed(file, relativePath, childExports.template, `${tagName}_template`)}`;
-  walks.injectWalks(
-    tag,
-    importNamed(file, relativePath, childExports.walks, `${tagName}_walks`),
-  );
-
-  if (node.var) {
-    const source = initValue(
-      // TODO: support destructuring
-      node.var.extra!.binding!,
-    );
-    source.register = true;
-    addStatement(
-      "render",
-      tagSection,
-      undefined,
-      t.expressionStatement(
-        callRuntime(
-          "setTagVar",
-          scopeIdentifier,
+        getSerializedScopeProperties(section).set(
           getScopeAccessorLiteral(childScopeBinding),
-          source.identifier,
-        ),
-      ),
-    );
-  }
-  addStatement(
-    "render",
-    tagSection,
-    undefined,
-    t.expressionStatement(
-      t.callExpression(tagIdentifier, [
-        createScopeReadExpression(tagSection, childScopeBinding),
-      ]),
-    ),
-  );
-  tag.remove();
-}
+          peekScopeId,
+        );
+
+        const inputExports =
+          loadFileForTag(tag)?.ast.program.extra?.domExports?.params?.props?.[0]
+            ?.props;
+        const { properties, statements } = translateAttrs(tag, inputExports);
+
+        if (node.extra!.tagNameNullable) {
+          const renderBodyProp = getTranslatedRenderBodyProperty(properties);
+          let renderBodyId: t.Identifier | undefined = undefined;
+
+          if (renderBodyProp) {
+            const renderBodyExpression = renderBodyProp.value;
+            renderBodyProp.value = renderBodyId =
+              tag.scope.generateUidIdentifier("renderBody");
+            const [renderBodyPath] = tag.insertBefore(
+              t.variableDeclaration("const", [
+                t.variableDeclarator(
+                  renderBodyId,
+                  // TODO: only register if needed (child template analysis)
+                  renderBodyExpression,
+                ),
+              ]),
+            );
+            renderBodyPath.skip();
+          }
+
+          let renderTagExpr: t.Expression = callExpression(
+            tagIdentifier,
+            t.objectExpression(properties),
+          );
+          if (tagVar) {
+            translateVar(
+              tag,
+              t.unaryExpression("void", t.numericLiteral(0)),
+              "let",
+            );
+            renderTagExpr = t.assignmentExpression("=", tagVar, renderTagExpr);
+          }
+
+          statements.push(
+            t.ifStatement(
+              tagIdentifier,
+              t.expressionStatement(renderTagExpr),
+              renderBodyId && callStatement(renderBodyId),
+            ),
+          );
+        } else if (tagVar) {
+          translateVar(
+            tag,
+            callExpression(
+              tagIdentifier,
+              t.objectExpression(properties),
+              callRuntime(
+                "register",
+                callRuntime(
+                  "createRenderer",
+                  t.arrowFunctionExpression([], t.blockStatement([])),
+                ),
+                t.stringLiteral(
+                  getResumeRegisterId(
+                    section,
+                    (node.var as t.Identifier).extra?.binding, // TODO: node.var is not always an identifier.
+                  ),
+                ),
+                getScopeIdIdentifier(section),
+              ),
+            ),
+          );
+          setForceResumeScope(section);
+        } else {
+          statements.push(
+            callStatement(tagIdentifier, t.objectExpression(properties)),
+          );
+        }
+
+        for (const replacement of tag.replaceWithMultiple(statements)) {
+          replacement.skip();
+        }
+      },
+    },
+    dom: {
+      enter(tag) {
+        walks.visit(tag);
+      },
+      exit(tag: t.NodePath<t.MarkoTag>) {
+        const tagSection = getSection(tag);
+        const { node } = tag;
+        const extra = node.extra!;
+        const childScopeBinding = extra[kChildScopeBinding]!;
+        const write = writer.writeTo(tag);
+        const { file } = tag.hub;
+        const tagName = t.isIdentifier(node.name)
+          ? node.name.name
+          : t.isStringLiteral(node.name)
+            ? node.name.value
+            : "tag";
+        const relativePath = getTagRelativePath(tag);
+        const childProgramExtra = loadFileForTag(tag)!.ast.program.extra;
+        const childExports = childProgramExtra.domExports!;
+        const tagIdentifier = importNamed(
+          file,
+          relativePath,
+          childExports.setup,
+          tagName,
+        );
+        const inputExport = childExports.params?.props?.[0];
+
+        if (inputExport) {
+          writeAttrsToExports(tag, inputExport, getTagName(tag) || "child", {
+            tagSection,
+            relativePath,
+            childScopeBinding,
+          });
+        }
+
+        write`${importNamed(file, relativePath, childExports.template, `${tagName}_template`)}`;
+        walks.injectWalks(
+          tag,
+          importNamed(
+            file,
+            relativePath,
+            childExports.walks,
+            `${tagName}_walks`,
+          ),
+        );
+
+        if (node.var) {
+          const source = initValue(
+            // TODO: support destructuring
+            node.var.extra!.binding!,
+          );
+          source.register = true;
+          addStatement(
+            "render",
+            tagSection,
+            undefined,
+            t.expressionStatement(
+              callRuntime(
+                "setTagVar",
+                scopeIdentifier,
+                getScopeAccessorLiteral(childScopeBinding),
+                source.identifier,
+              ),
+            ),
+          );
+        }
+        addStatement(
+          "render",
+          tagSection,
+          undefined,
+          t.expressionStatement(
+            t.callExpression(tagIdentifier, [
+              createScopeReadExpression(tagSection, childScopeBinding),
+            ]),
+          ),
+        );
+        tag.remove();
+      },
+    },
+  }),
+} satisfies TemplateVisitor<t.MarkoTag>;
 
 export function getTagRelativePath(tag: t.NodePath<t.MarkoTag>) {
   const {
@@ -327,19 +344,19 @@ export function getTagRelativePath(tag: t.NodePath<t.MarkoTag>) {
 
 function analyzeAttrs(
   tag: t.NodePath<t.MarkoTag>,
-  childExports: ParamsExports | undefined,
+  templateExport: TemplateExport | undefined,
 ) {
-  if (!childExports) {
+  if (!templateExport) {
     dropReferences(getAllTagReferenceNodes(tag.node));
     return;
   }
 
-  if (!childExports.props || tag.node.arguments?.length) {
+  if (!templateExport.props || tag.node.arguments?.length) {
     mergeReferences(tag, getAllTagReferenceNodes(tag.node));
     return;
   }
 
-  const attrTagLookup = getAttrTagLookup(tag);
+  const attrTagLookup = analyzeAttributeTags(tag);
   const seen = new Set<string>();
   if (attrTagLookup) {
     const nodeReferencesByGroup = new Map<
@@ -372,7 +389,7 @@ function analyzeAttrs(
       if (child.isMarkoTag()) {
         if (isAttributeTag(child)) {
           const attrTagMeta = attrTagLookup[getTagName(child)];
-          const childAttrExports = childExports.props[attrTagMeta.name];
+          const childAttrExports = templateExport.props[attrTagMeta.name];
           if (childAttrExports) {
             if (childAttrExports.props && !attrTagMeta.dynamic) {
               analyzeAttrs(child, childAttrExports);
@@ -386,7 +403,7 @@ function analyzeAttrs(
           const group = child.node.extra!.attributeTagGroup!;
           let childUsesGroupProp = false;
           for (const name of group) {
-            if (childExports.props[attrTagLookup[name].name]) {
+            if (templateExport.props[attrTagLookup[name].name]) {
               childUsesGroupProp = true;
               break;
             }
@@ -411,7 +428,7 @@ function analyzeAttrs(
   for (let i = attributes.length; i--; ) {
     const attr = attributes[i];
     if (t.isMarkoAttribute(attr)) {
-      if (seen.has(attr.name) || !childExports.props[attr.name]) {
+      if (seen.has(attr.name) || !templateExport.props[attr.name]) {
         // drop references for duplicated attributes and unused attributes.
         dropReferences(attr.value);
         continue;
@@ -432,9 +449,9 @@ function analyzeAttrs(
   }
 }
 
-function writeDOMAttrs(
+function writeAttrsToExports(
   tag: t.NodePath<t.MarkoTag>,
-  childExports: ParamsExports,
+  templateExport: TemplateExport,
   importAlias: string,
   info: {
     tagSection: Section;
@@ -448,7 +465,7 @@ function writeDOMAttrs(
     const tagInputIdentifier = importNamed(
       tag.hub.file,
       info.relativePath,
-      childExports.id,
+      templateExport.id,
       `${importAlias}_input`,
     );
     addValue(
@@ -470,16 +487,16 @@ function writeDOMAttrs(
     return;
   }
 
-  if (!childExports.props) {
+  if (!templateExport.props) {
     const referencedBindings = tag.node.extra?.referencedBindings;
     const tagInputIdentifier = importNamed(
       tag.hub.file,
       info.relativePath,
-      childExports.id,
+      templateExport.id,
       `${importAlias}_input`,
     );
 
-    const translatedAttrs = translateAttrs(tag, buildDOMRenderBody);
+    const translatedAttrs = translateAttrs(tag);
 
     if (translatedAttrs.statements.length) {
       addStatement(
@@ -506,7 +523,7 @@ function writeDOMAttrs(
   }
 
   const seen = new Set<string>();
-  const attrTagLookup = getAttrTagLookup(tag);
+  const attrTagLookup = analyzeAttributeTags(tag);
   if (attrTagLookup) {
     const attrTags = tag.get("attributeTags");
     const statementsByGroup = new Map<
@@ -536,8 +553,7 @@ function writeDOMAttrs(
         index,
         attrTagLookup,
         statements,
-        buildDOMRenderBody,
-        childExports.props,
+        templateExport.props,
       );
     };
 
@@ -550,12 +566,12 @@ function writeDOMAttrs(
       if (child.isMarkoTag()) {
         if (isAttributeTag(child)) {
           const attrTagMeta = attrTagLookup[getTagName(child)];
-          const childAttrExport = childExports.props[attrTagMeta.name];
+          const childAttrExport = templateExport.props[attrTagMeta.name];
           if (childAttrExport) {
             if (attrTagMeta.dynamic) {
               i = translateDynamicAttrTagChildInGroup(attrTagMeta.group, i);
             } else {
-              writeDOMAttrs(
+              writeAttrsToExports(
                 child,
                 childAttrExport,
                 `${importAlias}_${attrTagMeta.name}`,
@@ -579,7 +595,7 @@ function writeDOMAttrs(
       const decls: t.VariableDeclaration["declarations"] = [];
       for (const name of group) {
         const attrTagMeta = attrTagLookup[name];
-        const childAttrExports = childExports.props[attrTagMeta.name];
+        const childAttrExports = templateExport.props[attrTagMeta.name];
         if (!childAttrExports) continue;
         const attrExportIdentifier = importNamed(
           tag.hub.file,
@@ -612,11 +628,11 @@ function writeDOMAttrs(
   const bodySection = tag.node.body.extra?.section;
   if (bodySection && !seen.has("renderBody")) {
     seen.add("renderBody");
-    if (childExports.props.renderBody) {
+    if (templateExport.props.renderBody) {
       const renderBodyExportIdentifier = importNamed(
         tag.hub.file,
         info.relativePath,
-        childExports.props.renderBody.id,
+        templateExport.props.renderBody.id,
         `${importAlias}_renderBody`,
       );
       addValue(
@@ -643,7 +659,7 @@ function writeDOMAttrs(
   for (let i = attributes.length; i--; ) {
     const attr = attributes[i];
     if (t.isMarkoAttribute(attr)) {
-      const childAttrExports = childExports.props[attr.name];
+      const childAttrExports = templateExport.props[attr.name];
       if (!childAttrExports || seen.has(attr.name)) continue;
       seen.add(attr.name);
 
@@ -679,7 +695,7 @@ function writeDOMAttrs(
     }
   }
 
-  const missing = new Set<string>(Object.keys(childExports.props));
+  const missing = new Set<string>(Object.keys(templateExport.props));
   for (const name of seen) missing.delete(name);
 
   if (missing.size) {
@@ -700,7 +716,7 @@ function writeDOMAttrs(
     }
 
     for (const name of missing) {
-      const childAttrExports = childExports.props[name]!;
+      const childAttrExports = templateExport.props[name]!;
       const attrExportIdentifier = importNamed(
         tag.hub.file,
         info.relativePath,
@@ -720,35 +736,6 @@ function writeDOMAttrs(
         ),
       );
     }
-  }
-}
-
-function buildDOMRenderBody(body: t.NodePath<t.MarkoTagBody>) {
-  const bodySection = body.node.extra?.section;
-  if (bodySection) {
-    return callRuntime(
-      "bindRenderer",
-      scopeIdentifier,
-      t.identifier(bodySection.name),
-    );
-  }
-}
-
-function buildHTMLRenderBody(body: t.NodePath<t.MarkoTagBody>) {
-  const bodySection = body.node.extra?.section;
-  if (bodySection) {
-    return callRuntime(
-      "register",
-      callRuntime(
-        "createRenderer",
-        t.arrowFunctionExpression(
-          body.node.params,
-          t.blockStatement(body.node.body),
-        ),
-      ),
-      t.stringLiteral(getResumeRegisterId(bodySection, "renderer")),
-      bodySection.closures.size && getScopeIdIdentifier(bodySection.parent!),
-    );
   }
 }
 

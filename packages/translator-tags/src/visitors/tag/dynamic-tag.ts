@@ -4,11 +4,11 @@ import {
   importNamed,
   loadFileForTag,
 } from "@marko/babel-utils";
-import { types as t } from "@marko/compiler";
+import { type Config, types as t } from "@marko/compiler";
 import { WalkCode } from "@marko/runtime-tags/common/types";
 
-import attrsToObject, { getRenderBodyProp } from "../../util/attrs-to-object";
 import { isOutputHTML } from "../../util/marko-config";
+import { analyzeAttributeTags } from "../../util/nested-attribute-tags";
 import {
   addReferenceToExpression,
   type Binding,
@@ -29,15 +29,19 @@ import {
 import {
   addValue,
   buildSignalIntersections,
-  getResumeRegisterId,
   getSerializedScopeProperties,
   getSignal,
   getSignalFn,
   writeHTMLResumeStatements,
 } from "../../util/signals";
 import { getAllTagReferenceNodes } from "../../util/tag-reference-nodes";
-import toFirstExpressionOrBlock from "../../util/to-first-expression-or-block";
+import { translateTarget } from "../../util/target-translate";
+import {
+  getTranslatedRenderBodyProperty,
+  translateAttrs,
+} from "../../util/translate-attrs";
 import translateVar from "../../util/translate-var";
+import type { TemplateVisitor } from "../../util/visitors";
 import * as walks from "../../util/walks";
 import * as writer from "../../util/writer";
 import { currentProgramPath, scopeIdentifier } from "../program";
@@ -53,7 +57,10 @@ declare module "@marko/compiler/dist/types" {
 
 export default {
   analyze: {
-    enter(tag: t.NodePath<t.MarkoTag>) {
+    enter(tag) {
+      assertAttributesOrArgs(tag);
+      analyzeAttributeTags(tag);
+
       const section = getOrCreateSection(tag);
       const tagExtra = (tag.node.extra ??= {});
       const tagBody = tag.get("body");
@@ -72,119 +79,95 @@ export default {
       addReferenceToExpression(tag, domBinding);
     },
   },
-  translate: {
-    enter(tag: t.NodePath<t.MarkoTag>) {
-      walks.visit(tag, WalkCode.Replace);
-      assertAttributesOrArgs(tag);
-
-      walks.enterShallow(tag);
-
-      if (isOutputHTML()) {
+  translate: translateTarget({
+    html: {
+      enter(tag) {
+        walks.visit(tag, WalkCode.Replace);
+        walks.enterShallow(tag);
         writer.flushBefore(tag);
-      }
-    },
-    exit(tag: t.NodePath<t.MarkoTag>) {
-      const { node } = tag;
-      const extra = node.extra!;
-      const nodeRef = extra[kDOMBinding]!;
-      let tagExpression = node.name;
+      },
+      exit(tag) {
+        const { node } = tag;
+        const extra = node.extra!;
+        const nodeRef = extra[kDOMBinding]!;
+        const section = getSection(tag);
+        let tagExpression = node.name;
 
-      // This is the interop layer leaking into the translator
-      // We use the dynamic tag when a custom tag from the class runtime is used
-      if (t.isStringLiteral(tagExpression)) {
-        const { file } = tag.hub;
-        const relativePath = getTagRelativePath(tag);
-        tagExpression = importDefault(file, relativePath, tagExpression.value);
-      }
-
-      if (extra.featureType === "class") {
-        const { markoOpts } = tag.hub.file;
-        const compatRuntimeFile = `marko/src/runtime/helpers/tags-compat/${
-          isOutputHTML() ? "html" : "dom"
-        }${markoOpts.optimize ? "" : "-debug"}.${markoOpts.modules === "esm" ? "mjs" : "js"}`;
-        importDefault(tag.hub.file, compatRuntimeFile);
-
-        if (isOutputHTML()) {
-          const serialized5to6 = importNamed(
+        // This is the interop layer leaking into the translator
+        // We use the dynamic tag when a custom tag from the class runtime is used
+        if (t.isStringLiteral(tagExpression)) {
+          tagExpression = importDefault(
             tag.hub.file,
-            compatRuntimeFile,
-            "s",
+            getTagRelativePath(tag),
+            tagExpression.value,
           );
+        }
+
+        if (extra.featureType === "class") {
+          const compatRuntimeFile = getCompatRuntimeFile(
+            tag.hub.file.markoOpts,
+          );
+          importDefault(tag.hub.file, compatRuntimeFile);
           currentProgramPath.pushContainer(
             "body",
             t.expressionStatement(
-              t.callExpression(serialized5to6, [
-                t.identifier((tagExpression as t.Identifier).name),
-                t.stringLiteral(loadFileForTag(tag)!.metadata.marko.id),
-              ]),
-            ),
-          );
-        } else {
-          currentProgramPath.pushContainer(
-            "body",
-            t.expressionStatement(
-              callRuntime(
-                "register",
-                t.stringLiteral(loadFileForTag(tag)!.metadata.marko.id),
-                t.identifier((tagExpression as t.Identifier).name),
+              t.callExpression(
+                importNamed(tag.hub.file, compatRuntimeFile, "s"),
+                [
+                  t.identifier((tagExpression as t.Identifier).name),
+                  t.stringLiteral(loadFileForTag(tag)!.metadata.marko.id),
+                ],
               ),
             ),
           );
         }
-      }
 
-      if (isOutputHTML()) {
         writer.flushInto(tag);
         writeHTMLResumeStatements(tag.get("body"));
-        const attrsObject = attrsToObject(tag, true);
-        const renderBodyProp = getRenderBodyProp(attrsObject);
-        const args: (t.Expression | t.SpreadElement)[] = [
-          tagExpression,
-          attrsObject,
-        ];
+        const { properties, statements } = translateAttrs(tag);
+        const args: (t.Expression | t.SpreadElement)[] = [];
+        let hasMultipleArgs = false;
 
-        if (t.isObjectExpression(attrsObject) && renderBodyProp) {
-          const renderBodySection = getSection(tag.get("body"));
-          attrsObject.properties.pop();
-          args.push(
-            // TODO: omit register if dynamic tag is string only
-            callRuntime(
-              "register",
-              callRuntime(
-                "createRenderer",
-                t.arrowFunctionExpression(
-                  renderBodyProp.params,
-                  toFirstExpressionOrBlock(renderBodyProp.body),
-                ),
-              ),
-              t.stringLiteral(
-                getResumeRegisterId(renderBodySection, "renderer"),
-              ),
-              renderBodySection.closures.size &&
-                getScopeIdIdentifier(renderBodySection.parent!),
-            ),
-          );
+        if (node.arguments?.length) {
+          args.push(...node.arguments);
+
+          if (properties.length) {
+            hasMultipleArgs = true;
+            args.push(t.objectExpression(properties));
+          } else {
+            hasMultipleArgs =
+              node.arguments.length > 1 || t.isSpreadElement(node.arguments[0]);
+          }
+        } else {
+          const renderBodyProp = getTranslatedRenderBodyProperty(properties);
+          if (renderBodyProp) {
+            properties.splice(properties.indexOf(renderBodyProp), 1);
+            args.push(t.objectExpression(properties), renderBodyProp.value);
+          } else {
+            args.push(t.objectExpression(properties));
+          }
         }
 
         const dynamicScopeIdentifier =
           currentProgramPath.scope.generateUidIdentifier("dynamicScope");
-        const dynamicTagExpr = t.isArrayExpression(attrsObject)
-          ? callRuntime("dynamicTagArgs", ...args)
-          : callRuntime("dynamicTagInput", ...args);
+        const dynamicTagExpr = hasMultipleArgs
+          ? callRuntime(
+              "dynamicTagArgs",
+              tagExpression,
+              t.arrayExpression(args),
+            )
+          : callRuntime("dynamicTagInput", tagExpression, ...args);
         if (node.var) {
           // TODO: This breaks now that _dynamicTag returns a scope
           translateVar(tag, dynamicTagExpr);
-          tag.remove();
         } else {
-          tag
-            .replaceWith(
-              t.variableDeclaration("const", [
-                t.variableDeclarator(dynamicScopeIdentifier, dynamicTagExpr),
-              ]),
-            )[0]
-            .skip();
+          statements.push(
+            t.variableDeclaration("const", [
+              t.variableDeclarator(dynamicScopeIdentifier, dynamicTagExpr),
+            ]),
+          );
         }
-        const section = getSection(tag);
+
         writer.writeTo(tag)`${callRuntime(
           "markResumeControlEnd",
           getScopeIdIdentifier(section),
@@ -201,9 +184,52 @@ export default {
             ? t.identifier(tagExpression.name)
             : tagExpression,
         );
-      } else {
+
+        for (const replacement of tag.replaceWithMultiple(statements)) {
+          replacement.skip();
+        }
+      },
+    },
+    dom: {
+      enter(tag) {
+        walks.visit(tag, WalkCode.Replace);
+        walks.enterShallow(tag);
+      },
+      exit(tag) {
+        const { node } = tag;
+        const extra = node.extra!;
+        const nodeRef = extra[kDOMBinding]!;
         const section = getSection(tag);
         const bodySection = getSection(tag.get("body"));
+        let tagExpression = node.name;
+
+        // This is the interop layer leaking into the translator
+        // We use the dynamic tag when a custom tag from the class runtime is used
+        if (t.isStringLiteral(tagExpression)) {
+          tagExpression = importDefault(
+            tag.hub.file,
+            getTagRelativePath(tag),
+            tagExpression.value,
+          );
+        }
+
+        if (extra.featureType === "class") {
+          const compatRuntimeFile = getCompatRuntimeFile(
+            tag.hub.file.markoOpts,
+          );
+          importDefault(tag.hub.file, compatRuntimeFile);
+          currentProgramPath.pushContainer(
+            "body",
+            t.expressionStatement(
+              callRuntime(
+                "register",
+                t.stringLiteral(loadFileForTag(tag)!.metadata.marko.id),
+                t.identifier((tagExpression as t.Identifier).name),
+              ),
+            ),
+          );
+        }
+
         const hasBody = section !== bodySection;
         const renderBodyIdentifier = hasBody && t.identifier(bodySection.name);
         const signal = getSignal(section, nodeRef, "dynamicTagName");
@@ -225,11 +251,41 @@ export default {
             : tagExpression,
         );
 
-        const attrsObject = attrsToObject(tag, true);
-        const emptyAttrs =
-          t.isObjectExpression(attrsObject) && !attrsObject.properties.length;
-        if (!emptyAttrs || renderBodyIdentifier) {
-          const attrsGetter = t.arrowFunctionExpression([], attrsObject);
+        const { properties, statements } = translateAttrs(tag);
+        const args: (t.Expression | t.SpreadElement)[] = [];
+        let hasMultipleArgs = false;
+
+        if (node.arguments?.length) {
+          args.push(...node.arguments);
+
+          if (properties.length) {
+            hasMultipleArgs = true;
+            args.push(t.objectExpression(properties));
+          } else {
+            hasMultipleArgs =
+              node.arguments.length > 1 || t.isSpreadElement(node.arguments[0]);
+          }
+        } else if (properties.length || statements.length) {
+          const renderBodyProp = getTranslatedRenderBodyProperty(properties);
+          if (renderBodyProp) {
+            properties.splice(properties.indexOf(renderBodyProp), 1);
+          }
+
+          args.push(t.objectExpression(properties));
+        }
+
+        if (args.length) {
+          const argsOrInput = hasMultipleArgs
+            ? t.arrayExpression(args)
+            : (args[0] as t.Expression);
+          const attrsGetter = t.arrowFunctionExpression(
+            [],
+            statements.length
+              ? t.blockStatement(
+                  statements.concat(t.returnStatement(argsOrInput)),
+                )
+              : argsOrInput,
+          );
           const id = currentProgramPath.scope.generateUidIdentifier(
             tag.get("name").toString() + "_input",
           );
@@ -249,9 +305,7 @@ export default {
                           "dynamicTagAttrs",
                           getScopeAccessorLiteral(nodeRef),
                           renderBodyIdentifier,
-                          t.isArrayExpression(attrsObject)
-                            ? t.booleanLiteral(true)
-                            : false,
+                          hasMultipleArgs && t.numericLiteral(1),
                         ),
                       ),
                     ]),
@@ -267,7 +321,13 @@ export default {
         }
 
         tag.remove();
-      }
+      },
     },
-  },
-};
+  }),
+} satisfies TemplateVisitor<t.MarkoTag>;
+
+function getCompatRuntimeFile(markoOpts: Required<Config>) {
+  return `marko/src/runtime/helpers/tags-compat/${
+    isOutputHTML() ? "html" : "dom"
+  }${markoOpts.optimize ? "" : "-debug"}.${markoOpts.modules === "esm" ? "mjs" : "js"}`;
+}

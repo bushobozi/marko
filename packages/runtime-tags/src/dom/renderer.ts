@@ -80,7 +80,7 @@ export function initRenderer(renderer: RendererOrElementName, scope: Scope) {
 export function dynamicTagAttrs(
   nodeAccessor: Accessor,
   renderBody?: Renderer,
-  inputIsArgs?: boolean,
+  inputIsArgs?: 1,
 ) {
   return (
     scope: Scope,

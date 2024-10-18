@@ -88,8 +88,12 @@ class {
     increment() {
         this.state.count++;
     }
+    decrement() {
+        this.state.count--;
+    }
 }
 
 <div>The current count is ${state.count}</div>
 <button on-click("increment")>Click me!</button>
+<button on-click("decrement")>Count [-]</button>
 ```
